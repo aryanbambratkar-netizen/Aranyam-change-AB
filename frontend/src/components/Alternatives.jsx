@@ -94,7 +94,12 @@ export default function Alternatives({
               {protected_violation_km > 0 && (
                 <div className="mb-3 px-2 py-1 bg-red-950/20 border border-red-900/30 rounded text-[9px] text-red-400 flex items-center gap-1">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Intersects {protected_violation_km} km of Pench Core area.</span>
+                  <span>
+                    Intersects {protected_violation_km} km of:{" "}
+                    {route.analysis.violated_protected_areas && route.analysis.violated_protected_areas.length > 0
+                      ? route.analysis.violated_protected_areas.map(v => v.name).join(', ')
+                      : 'Core Protected Zone'}
+                  </span>
                 </div>
               )}
 
@@ -109,7 +114,7 @@ export default function Alternatives({
                 {/* Cost */}
                 <div>
                   <span className="text-[9px] text-slate-500 block uppercase font-medium">Const. Cost</span>
-                  <span className="font-semibold text-slate-300">${construction_cost_million}M</span>
+                  <span className="font-semibold text-slate-300">₹{construction_cost_million} Cr</span>
                 </div>
 
                 {/* Overlap Summary */}

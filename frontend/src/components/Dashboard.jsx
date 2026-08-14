@@ -100,7 +100,13 @@ export default function Dashboard({ analysis, baselineAnalysis }) {
                 <div className="text-xs">
                   <p className="font-bold">Tiger Reserve Core Violation</p>
                   <p className="mt-1 text-slate-300 text-[11px] leading-relaxed">
-                    The proposed path intersects {protected_violation_km} km of the protected Pench Core Area. This triggers legal blockages and high penalties. Please adjust alignment.
+                    The proposed path intersects {protected_violation_km} km of protected core sanctuary areas, violating:{" "}
+                    <span className="font-semibold text-red-400">
+                      {analysis.violated_protected_areas && analysis.violated_protected_areas.length > 0
+                        ? analysis.violated_protected_areas.map(v => `${v.name} (${v.length_km} km)`).join(', ')
+                        : 'Core Protected Zone'}
+                    </span>
+                    . This triggers legal blockages and high ecological penalties. Please adjust alignment.
                   </p>
                 </div>
               </div>
@@ -110,7 +116,7 @@ export default function Dashboard({ analysis, baselineAnalysis }) {
                 <div className="text-xs">
                   <p className="font-bold">Protected Area Intact</p>
                   <p className="mt-1 text-slate-300 text-[11px]">
-                    No intersections detected inside the Pench Core Tiger Reserve Zone. Connectivity to the core is preserved.
+                    No intersections detected inside any core wildlife sanctuary zone (Pench, Mansinghdeo, Bor, or Umred Karhandla). Connectivity is preserved.
                   </p>
                 </div>
               </div>
@@ -121,7 +127,7 @@ export default function Dashboard({ analysis, baselineAnalysis }) {
           <div className="grid grid-cols-2 gap-3 mt-4 border-t border-slate-800 pt-4">
             <div>
               <span className="text-[10px] text-slate-400 block font-medium">EST. COST</span>
-              <span className="text-lg font-bold text-slate-200">${construction_cost_million}M</span>
+              <span className="text-lg font-bold text-slate-200">₹{construction_cost_million} Cr</span>
             </div>
             <div>
               <span className="text-[10px] text-slate-400 block font-medium">TOTAL LENGTH</span>
@@ -177,9 +183,9 @@ export default function Dashboard({ analysis, baselineAnalysis }) {
               <span className="text-[10px] text-slate-400 block mb-1">COST VARIATION</span>
               <div className="flex items-center justify-center gap-1 text-slate-200 font-mono text-sm font-bold">
                 {costDiff > 0 ? (
-                  <span className="text-red-400">+${costDiff.toFixed(2)}M</span>
+                  <span className="text-red-400">+₹{costDiff.toFixed(2)} Cr</span>
                 ) : costDiff < 0 ? (
-                  <span className="text-emerald-400">-${Math.abs(costDiff).toFixed(2)}M</span>
+                  <span className="text-emerald-400">-₹{Math.abs(costDiff).toFixed(2)} Cr</span>
                 ) : (
                   <span className="text-slate-400 text-xs">No cost change</span>
                 )}
@@ -253,6 +259,24 @@ export default function Dashboard({ analysis, baselineAnalysis }) {
             </div>
           </div>
         </div>
+
+        {((breakdown.forest.details && breakdown.forest.details.length > 0) || 
+          (breakdown.corridor.details && breakdown.corridor.details.length > 0)) && (
+          <div className="mt-4 pt-3 border-t border-slate-850 text-[11px] text-slate-350 space-y-2 text-left">
+            {breakdown.forest.details && breakdown.forest.details.length > 0 && (
+              <div className="leading-relaxed">
+                <span className="font-semibold text-emerald-400">🌲 Forests Intersected:</span>{" "}
+                {breakdown.forest.details.map(d => `${d.name} (${d.length_km} km)`).join(', ')}
+              </div>
+            )}
+            {breakdown.corridor.details && breakdown.corridor.details.length > 0 && (
+              <div className="leading-relaxed">
+                <span className="font-semibold text-violet-400">🐅 Corridors Intersected:</span>{" "}
+                {breakdown.corridor.details.map(d => `${d.name} (${d.length_km} km, ${d.criticality} Priority)`).join(', ')}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Recharts Chart for visualization */}

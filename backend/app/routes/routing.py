@@ -10,8 +10,8 @@ NX = 50
 NY = 50
 
 # Bounding box
-MIN_LAT, MAX_LAT = 21.1, 21.8
-MIN_LON, MAX_LON = 79.0, 79.5
+MIN_LAT, MAX_LAT = 20.7, 21.9
+MIN_LON, MAX_LON = 78.5, 79.7
 
 def get_grid_coords(x, y):
     """Converts grid cell indices to longitude/latitude."""

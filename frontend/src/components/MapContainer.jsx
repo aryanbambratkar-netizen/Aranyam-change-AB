@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Tooltip, useMapEvents, Marker } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -32,8 +32,9 @@ export default function MapComponent({
   visibleLayers,
   onPathChange
 }) {
-  const defaultCenter = [21.48, 79.25]; // Pench/Nagpur region center
-  const defaultZoom = 10;
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const defaultCenter = [21.15, 79.09]; // Nagpur Division center
+  const defaultZoom = 9;
 
   // Handle adding a point to the road path
   const handleMapClick = (latlng) => {
@@ -278,7 +279,7 @@ export default function MapComponent({
         </div>
         <div className="flex items-center gap-2">
           <span className="w-3 h-0.5 border-t border-dashed border-slate-400 inline-block"></span>
-          <span>Existing Road (NH44)</span>
+          <span>Existing Roads (NH44 / NH53 / SH9)</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-600 inline-block"></span>
@@ -290,9 +291,103 @@ export default function MapComponent({
         </div>
       </div>
       
-      <div className="absolute top-4 left-4 bg-slate-900/80 backdrop-blur-sm border border-slate-700 px-3 py-1 rounded text-slate-400 text-[10px] shadow z-[1000]">
-        ℹ️ GIS Source: Nagpur/Pench Buffer Zone Simulation Data
-      </div>
+      <button
+        onClick={() => setIsModalOpen(true)}
+        className="absolute top-4 left-4 bg-slate-900/90 hover:bg-slate-800 backdrop-blur-sm border border-slate-700 hover:border-slate-500 px-3 py-1.5 rounded text-slate-350 text-[10px] font-bold shadow z-[1000] cursor-pointer pointer-events-auto transition flex items-center gap-1 active:scale-95"
+      >
+        <span>ℹ️ View GIS Data Sources</span>
+      </button>
+
+      {/* Glassmorphic Modal for GIS Sources */}
+      {isModalOpen && (
+        <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-md z-[2000] flex items-center justify-center p-6 animate-fade-in pointer-events-auto">
+          <div className="bg-slate-900/95 border border-slate-700/80 max-w-xl w-full max-h-[85%] rounded-xl shadow-2xl p-5 flex flex-col justify-between text-slate-200">
+            <div>
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2 mb-3">
+                <h3 className="text-xs font-extrabold text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                  🗺️ Nagpur Division GIS Data Catalog
+                </h3>
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="text-slate-300 hover:text-slate-100 text-[10px] font-bold bg-slate-850 hover:bg-slate-800 border border-slate-700 px-2 py-0.5 rounded transition cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+              
+              <div className="overflow-y-auto max-h-[280px] pr-1 space-y-3 text-[11px] text-left">
+                <p className="text-slate-400 leading-normal text-[10px]">
+                  Aranyam integrates geographic data of forests, tiger reserves, eco-sensitive zones, and infrastructure for the Nagpur Division. Below is the catalog of official GIS sources and spatial datasets referenced:
+                </p>
+                
+                <div className="border border-slate-800 rounded-lg overflow-hidden">
+                  <table className="w-full text-[10px] border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-350 font-bold">
+                        <th className="px-2 py-1.5 text-left w-1/4">Layer</th>
+                        <th className="px-2 py-1.5 text-left w-1/3">Region / Cover</th>
+                        <th className="px-2 py-1.5 text-left">Official GIS Source</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850">
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-emerald-400">Pench Tiger Reserve</td>
+                        <td className="px-2 py-1.5 text-slate-350">Ramtek, Nagpur (Core & Buffer)</td>
+                        <td className="px-2 py-1.5 text-slate-300">National Tiger Conservation Authority (NTCA) / WII</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-emerald-400">Bor Tiger Reserve</td>
+                        <td className="px-2 py-1.5 text-slate-350">Wardha & Nagpur Border</td>
+                        <td className="px-2 py-1.5 text-slate-300">NTCA / Wardha Forest Division / WII</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-emerald-400">Umred Karhandla</td>
+                        <td className="px-2 py-1.5 text-slate-350">Nagpur & Bhandara borders</td>
+                        <td className="px-2 py-1.5 text-slate-300">Maharashtra Forest Department / MRSAC</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-emerald-400">Mansinghdeo Sanctuary</td>
+                        <td className="px-2 py-1.5 text-slate-350">Ramtek, Nagpur</td>
+                        <td className="px-2 py-1.5 text-slate-300">MoEFCC Eco-Sensitive Zone Gazette / WII</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-emerald-400">Urban Reserve Forests</td>
+                        <td className="px-2 py-1.5 text-slate-350">Gorewada, Ambazari, Seminary Hills</td>
+                        <td className="px-2 py-1.5 text-slate-300">Maharashtra Remote Sensing Applications Centre</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-violet-400">Wildlife Corridors</td>
+                        <td className="px-2 py-1.5 text-slate-350">Central India Pathways</td>
+                        <td className="px-2 py-1.5 text-slate-300">WII Tiger Corridor Atlas</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-sky-400">Hydrology (Water)</td>
+                        <td className="px-2 py-1.5 text-slate-350">Rivers (Pench, Wainganga), Reservoirs</td>
+                        <td className="px-2 py-1.5 text-slate-300">India-WRIS / NRSC Bhuvan (ISRO)</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-slate-400">Transport Networks</td>
+                        <td className="px-2 py-1.5 text-slate-350">Nagpur Highways (NH44, NH53, SH9)</td>
+                        <td className="px-2 py-1.5 text-slate-300">NHAI / OpenStreetMap Contributors</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2 py-1.5 font-semibold text-amber-500">Settlements (Villages)</td>
+                        <td className="px-2 py-1.5 text-slate-350">Rural Settlement Hubs</td>
+                        <td className="px-2 py-1.5 text-slate-300">Census of India Boundary Datasets / MRSAC</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            
+            <div className="border-t border-slate-800 pt-2 mt-3 text-[9px] text-slate-500 flex justify-between items-center leading-normal">
+              <span>🔒 Compiled from official gazettes and open GIS repositories.</span>
+              <span className="font-semibold">Coordinates: EPSG:4326</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

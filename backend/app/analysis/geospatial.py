@@ -97,10 +97,37 @@ def analyze_proposed_road(coordinates, custom_weights=None):
     affected_forest_geom = road_buffer_in_forest.intersection(forests_geom)
     affected_forest_ha = calculate_area_hectares(affected_forest_geom)
 
+    # Specific forest details
+    violated_forests = []
+    for f in forests_fc.features:
+        f_geom = Polygon(f.geometry.coordinates[0])
+        intersection = road_line.intersection(f_geom)
+        length_km = calculate_polyline_length_km(intersection)
+        if length_km > 0:
+            violated_forests.append({
+                "name": f.properties["name"],
+                "length_km": round(length_km, 2),
+                "gis_source": f.properties.get("gis_source", "Unknown")
+            })
+
     # 2. Corridor Impact
     corridor_intersection = road_line.intersection(corridors_geom)
     corridor_length_km = calculate_polyline_length_km(corridor_intersection)
     corridor_percentage = (corridor_length_km / total_length_km) * 100.0
+
+    # Specific corridor details
+    violated_corridors = []
+    for f in corridors_fc.features:
+        f_geom = Polygon(f.geometry.coordinates[0])
+        intersection = road_line.intersection(f_geom)
+        length_km = calculate_polyline_length_km(intersection)
+        if length_km > 0:
+            violated_corridors.append({
+                "name": f.properties["name"],
+                "length_km": round(length_km, 2),
+                "criticality": f.properties.get("criticality", "Medium"),
+                "gis_source": f.properties.get("gis_source", "Unknown")
+            })
 
     # 3. Water Crossings
     # Crossing a river (LineString intersection points)
@@ -146,7 +173,7 @@ def analyze_proposed_road(coordinates, custom_weights=None):
     road_in_pristine = road_line.difference(existing_road_buffer)
     pristine_length_km = calculate_polyline_length_km(road_in_pristine)
     pristine_percentage = (pristine_length_km / total_length_km) * 100.0
-
+    
     # Also check if it physically bisects forest patches
     # If we difference the forest with a buffered road, does it increase the number of polygons?
     fragmentation_score = pristine_percentage
@@ -158,6 +185,19 @@ def analyze_proposed_road(coordinates, custom_weights=None):
     protected_intersection = road_line.intersection(protected_geom)
     protected_length_km = calculate_polyline_length_km(protected_intersection)
     protected_percentage = (protected_length_km / total_length_km) * 100.0
+
+    # Specific protected core violations
+    violated_protected_areas = []
+    for f in protected_fc.features:
+        f_geom = Polygon(f.geometry.coordinates[0])
+        intersection = road_line.intersection(f_geom)
+        length_km = calculate_polyline_length_km(intersection)
+        if length_km > 0:
+            violated_protected_areas.append({
+                "name": f.properties["name"],
+                "length_km": round(length_km, 2),
+                "gis_source": f.properties.get("gis_source", "Unknown")
+            })
     
     # Normalized Individual Scores (0-100 range)
     score_forest = forest_percentage
@@ -182,7 +222,7 @@ def analyze_proposed_road(coordinates, custom_weights=None):
     
     ecological_score = min(100.0, raw_eco_score + penalty)
 
-    # Estimate Construction Cost (in Million USD)
+    # Estimate Construction Cost (in Crore Rupees)
     base_cost = total_length_km * COST_COEFFICIENTS["base_road_cost_per_km"]
     forest_premium = forest_length_km * COST_COEFFICIENTS["forest_crossing_premium_per_km"]
     corridor_premium = corridor_length_km * COST_COEFFICIENTS["corridor_crossing_premium_per_km"]
@@ -195,15 +235,18 @@ def analyze_proposed_road(coordinates, custom_weights=None):
         "ecological_score": round(ecological_score, 1),
         "construction_cost_million": round(total_cost, 2),
         "protected_violation_km": round(protected_length_km, 2),
+        "violated_protected_areas": violated_protected_areas,
         "breakdown": {
             "forest": {
                 "score": round(score_forest, 1),
                 "length_km": round(forest_length_km, 2),
-                "affected_area_ha": round(affected_forest_ha, 1)
+                "affected_area_ha": round(affected_forest_ha, 1),
+                "details": violated_forests
             },
             "corridor": {
                 "score": round(score_corridor, 1),
-                "length_km": round(corridor_length_km, 2)
+                "length_km": round(corridor_length_km, 2),
+                "details": violated_corridors
             },
             "water": {
                 "score": round(score_water, 1),
