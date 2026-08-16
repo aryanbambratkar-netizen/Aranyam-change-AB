@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Tooltip, useMapEvents, Marker } from 'react-leaflet';
+import React, { useEffect, useState, useRef } from 'react';
+import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Tooltip, useMapEvents, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
 // Fix Leaflet marker icon issues in Vite/Webpack
@@ -10,15 +10,72 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Map click listener component
-function MapEvents({ isDrawMode, onMapClick }) {
+// Minimum on-screen pixel distance between points while dragging in freehand
+// mode, so we don't flood drawnPoints with hundreds of near-duplicate points.
+const FREEHAND_MIN_PIXEL_GAP = 14;
+// How close (in pixels) a click needs to be to the first point to "close"
+// a shape and turn it into a polygon.
+const SHAPE_CLOSE_PIXEL_RADIUS = 12;
+
+// Map click / drag listener component
+// drawMode: 'straight' | 'freehand' | 'shape' | null
+function MapEvents({ drawMode, drawnPoints, onAddPoint, onCloseShape }) {
+  const isMouseDownRef = useRef(false);
+  const map = useMap();
+
   useMapEvents({
-    click(e) {
-      if (isDrawMode) {
-        onMapClick(e.latlng);
+    mousedown(e) {
+      if (drawMode === 'freehand') {
+        isMouseDownRef.current = true;
+        onAddPoint(e.latlng);
       }
-    }
+    },
+    mousemove(e) {
+      if (drawMode === 'freehand' && isMouseDownRef.current) {
+        // Throttle by pixel distance so we get a smooth curve, not a point-flood
+        const last = drawnPoints[drawnPoints.length - 1];
+        if (last) {
+          const lastPx = map.latLngToContainerPoint(L.latLng(last[0], last[1]));
+          const curPx = map.latLngToContainerPoint(e.latlng);
+          const dist = lastPx.distanceTo(curPx);
+          if (dist < FREEHAND_MIN_PIXEL_GAP) return;
+        }
+        onAddPoint(e.latlng);
+      }
+    },
+    mouseup() {
+      if (drawMode === 'freehand') {
+        isMouseDownRef.current = false;
+      }
+    },
+    click(e) {
+      if (drawMode === 'straight') {
+        onAddPoint(e.latlng);
+      }
+      if (drawMode === 'shape') {
+        // If there's already a shape in progress and the click lands near
+        // the first point, close the shape into a polygon instead of adding
+        // a new point.
+        if (drawnPoints.length >= 3) {
+          const first = drawnPoints[0];
+          const firstPx = map.latLngToContainerPoint(L.latLng(first[0], first[1]));
+          const clickPx = map.latLngToContainerPoint(e.latlng);
+          if (firstPx.distanceTo(clickPx) <= SHAPE_CLOSE_PIXEL_RADIUS) {
+            onCloseShape();
+            return;
+          }
+        }
+        onAddPoint(e.latlng);
+      }
+    },
+    dblclick() {
+      // Double-click finishes a straight-line route
+      if (drawMode === 'straight' && drawnPoints.length >= 2) {
+        onCloseShape(); // for 'straight' this just signals "done", no closing loop
+      }
+    },
   });
+
   return null;
 }
 
@@ -26,25 +83,47 @@ export default function MapComponent({
   layers,
   drawnPoints,
   setDrawnPoints,
-  isDrawMode,
+  drawMode,           // 'straight' | 'freehand' | 'shape' | null
+  isShapeClosed,      // true once a 'shape' polygon has been closed
+  setIsShapeClosed,
   activeRouteId,
   alternativeRoutes,
   visibleLayers,
   onPathChange
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [basemap, setBasemap] = useState('satellite'); // 'satellite' | 'dark'
   const defaultCenter = [21.15, 79.09]; // Nagpur Division center
   const defaultZoom = 9;
 
-  // Handle adding a point to the road path
-  const handleMapClick = (latlng) => {
+  const emitPathChange = (points, closed) => {
+    if (!onPathChange) return;
+    // Send GeoJSON format [lon, lat] to parent for API analysis
+    const geojsonCoords = points.map(pt => [pt[1], pt[0]]);
+    if (closed && geojsonCoords.length > 0) {
+      geojsonCoords.push(geojsonCoords[0]); // close the ring for Polygon GeoJSON
+    }
+    onPathChange(geojsonCoords, closed ? 'Polygon' : 'LineString');
+  };
+
+  // Add a point in straight / freehand / shape mode.
+  // IMPORTANT: this only updates local state — it does NOT call onPathChange.
+  // Calling the API on every point (especially in freehand mode, which can add
+  // dozens of points per second while dragging) is what was flooding the
+  // backend and crashing the tab. The API is only called once drawing is
+  // finished (see App.jsx's completeDrawing) or when a vertex is dragged below.
+  const handleAddPoint = (latlng) => {
     const newPoints = [...drawnPoints, [latlng.lat, latlng.lng]];
     setDrawnPoints(newPoints);
-    if (onPathChange) {
-      // Send GeoJSON format [lon, lat] to parent for API analysis
-      const geojsonCoords = newPoints.map(pt => [pt[1], pt[0]]);
-      onPathChange(geojsonCoords);
+  };
+
+  // Close a 'shape' polygon, or finish a 'straight' route (dblclick).
+  // Also local-state only — App.jsx's completeDrawing button sends it to the API.
+  const handleCloseShape = () => {
+    if (drawMode === 'shape') {
+      setIsShapeClosed?.(true);
     }
+    // For 'straight' mode, dblclick just stops adding points — nothing else to do.
   };
 
   // Handle marker drag to adjust route vertex (What-if simulation)
@@ -53,10 +132,7 @@ export default function MapComponent({
     const newPoints = [...drawnPoints];
     newPoints[index] = [latlng.lat, latlng.lng];
     setDrawnPoints(newPoints);
-    if (onPathChange) {
-      const geojsonCoords = newPoints.map(pt => [pt[1], pt[0]]);
-      onPathChange(geojsonCoords);
-    }
+    emitPathChange(newPoints, isShapeClosed);
   };
 
   // Convert GeoJSON coordinate structure to Leaflet [lat, lon] structure
@@ -81,14 +157,43 @@ export default function MapComponent({
         zoom={defaultZoom}
         className="w-full h-full"
         style={{ background: "#0f172a" }} // Slate-900 fallback
+        // Disable Leaflet's own drag-to-pan while in freehand mode so dragging
+        // the mouse draws a route instead of panning the map.
+        dragging={drawMode !== 'freehand'}
+        doubleClickZoom={drawMode !== 'straight'}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" // Dark theme maps look premium
+          key={basemap} // force re-mount when switching so tiles don't mix
+          attribution={
+            basemap === 'satellite'
+              ? 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          }
+          url={
+            basemap === 'satellite'
+              ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+              : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          }
         />
 
-        {/* Map Drawing Click Handler */}
-        <MapEvents isDrawMode={isDrawMode} onMapClick={handleMapClick} />
+        {/* Lightweight labels-only overlay (place names, roads) for the satellite view.
+            These are small transparent text tiles, not full images, so they're cheap
+            to load — unlike the earlier full Esri reference layer that caused lag. */}
+        {basemap === 'satellite' && (
+          <TileLayer
+            url="https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png"
+            attribution="&copy; <a href='https://carto.com/attributions'>CARTO</a>"
+            pane="shadowPane" // renders above the satellite imagery
+          />
+        )}
+
+        {/* Map Drawing Click/Drag Handler */}
+        <MapEvents
+          drawMode={drawMode}
+          drawnPoints={drawnPoints}
+          onAddPoint={handleAddPoint}
+          onCloseShape={handleCloseShape}
+        />
 
         {/* ================= ENVIRONMENTAL LAYERS ================= */}
         {/* Protected Core Areas (High Alert) */}
@@ -192,15 +297,24 @@ export default function MapComponent({
         ))}
 
         {/* ================= DRAWN PROPOSED ROUTE ================= */}
+        {/* Renders as a closed Polygon once a 'shape' has been closed, otherwise as a Polyline (straight or freehand/curvy) */}
         {drawnPoints.length > 0 && (
-          <Polyline
-            positions={drawnPoints}
-            pathOptions={{ color: '#f97316', weight: 5, dashArray: isDrawMode ? "5, 5" : null }}
-          />
+          isShapeClosed ? (
+            <Polygon
+              positions={drawnPoints}
+              pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.15, weight: 4 }}
+            />
+          ) : (
+            <Polyline
+              positions={drawnPoints}
+              pathOptions={{ color: '#f97316', weight: 5, dashArray: drawMode ? "5, 5" : null }}
+              smoothFactor={drawMode === 'freehand' ? 3 : 1} // smooths the curvy freehand line a bit
+            />
+          )
         )}
 
-        {/* Vertex manipulation markers (Allows What-if simulation by dragging) */}
-        {drawnPoints.map((pt, idx) => {
+        {/* Vertex manipulation markers (Allows What-if simulation by dragging) — hidden during freehand drawing since there'd be too many */}
+        {drawMode !== 'freehand' && drawnPoints.map((pt, idx) => {
           const customMarkerHtml = `<div class="w-5 h-5 bg-orange-500 rounded-full border-2 border-white shadow-md cursor-pointer hover:bg-orange-600 transition-colors flex items-center justify-center text-[9px] text-white font-extrabold">${idx + 1}</div>`;
           const customIcon = L.divIcon({
             html: customMarkerHtml,
@@ -228,7 +342,7 @@ export default function MapComponent({
 
         {/* ================= ALTERNATIVE ROUTES ================= */}
         {/* Render generated alternatives if not drawing */}
-        {!isDrawMode && alternativeRoutes && alternativeRoutes.map((route) => {
+        {!drawMode && alternativeRoutes && alternativeRoutes.map((route) => {
           const isSelected = activeRouteId === route.id;
           const routeCoords = route.coordinates.map(pt => [pt[1], pt[0]]);
           
@@ -296,6 +410,13 @@ export default function MapComponent({
         className="absolute top-4 left-4 bg-slate-900/90 hover:bg-slate-800 backdrop-blur-sm border border-slate-700 hover:border-slate-500 px-3 py-1.5 rounded text-slate-350 text-[10px] font-bold shadow z-[1000] cursor-pointer pointer-events-auto transition flex items-center gap-1 active:scale-95"
       >
         <span>ℹ️ View GIS Data Sources</span>
+      </button>
+
+      <button
+        onClick={() => setBasemap(basemap === 'satellite' ? 'dark' : 'satellite')}
+        className="absolute top-4 left-[220px] bg-slate-900/90 hover:bg-slate-800 backdrop-blur-sm border border-slate-700 hover:border-slate-500 px-3 py-1.5 rounded text-slate-350 text-[10px] font-bold shadow z-[1000] cursor-pointer pointer-events-auto transition flex items-center gap-1 active:scale-95"
+      >
+        <span>{basemap === 'satellite' ? '🌙 Switch to Dark Map' : '🛰️ Switch to Satellite'}</span>
       </button>
 
       {/* Glassmorphic Modal for GIS Sources */}

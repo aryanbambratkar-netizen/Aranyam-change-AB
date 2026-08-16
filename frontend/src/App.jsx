@@ -3,7 +3,7 @@ import MapComponent from './components/MapContainer';
 import Dashboard from './components/Dashboard';
 import Alternatives from './components/Alternatives';
 import MitigationPanel from './components/MitigationPanel';
-import { Layers, Activity, Compass, Hammer, Trash2, Pencil, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Layers, Activity, Compass, Hammer, Trash2, Pencil, Spline, Shapes, CheckCircle2, RefreshCw } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -29,7 +29,11 @@ export default function App() {
   });
 
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isDrawMode, setIsDrawMode] = useState(false);
+
+  // drawMode: null | 'straight' | 'freehand' | 'shape'
+  const [drawMode, setDrawMode] = useState(null);
+  const [isShapeClosed, setIsShapeClosed] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -66,7 +70,8 @@ export default function App() {
   }, []);
 
   // Handle path geometry modifications (drawing or vertex dragging)
-  const handlePathChange = async (geojsonCoords) => {
+  // geometryType is 'LineString' or 'Polygon' — passed up from MapComponent
+  const handlePathChange = async (geojsonCoords, geometryType) => {
     if (geojsonCoords.length < 2) return;
     setLoading(true);
     try {
@@ -74,7 +79,7 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coordinates: geojsonCoords })
+        body: JSON.stringify({ coordinates: geojsonCoords, geometry_type: geometryType || 'LineString' })
       });
       if (!res.ok) throw new Error("Analysis failed");
       const result = await res.json();
@@ -116,35 +121,38 @@ export default function App() {
     }
   };
 
-  // Toggle draw mode
-  const startDrawing = () => {
+  // Start drawing in a given mode: 'straight' | 'freehand' | 'shape'
+  const startDrawing = (mode) => {
     setDrawnPoints([]);
+    setIsShapeClosed(false);
     setAnalysis(null);
     setBaselineAnalysis(null);
     setAlternativeRoutes(null);
     setActiveRouteId(null);
     setSuggestedMitigations([]);
     setOptimizationResult(null);
-    setIsDrawMode(true);
+    setDrawMode(mode);
   };
 
   const completeDrawing = () => {
-    setIsDrawMode(false);
+    setDrawMode(null);
     if (drawnPoints.length >= 2) {
       const geojsonCoords = drawnPoints.map(pt => [pt[1], pt[0]]);
-      handlePathChange(geojsonCoords);
+      if (isShapeClosed) geojsonCoords.push(geojsonCoords[0]);
+      handlePathChange(geojsonCoords, isShapeClosed ? 'Polygon' : 'LineString');
     }
   };
 
   const clearDrawing = () => {
     setDrawnPoints([]);
+    setIsShapeClosed(false);
     setAnalysis(null);
     setBaselineAnalysis(null);
     setAlternativeRoutes(null);
     setActiveRouteId(null);
     setSuggestedMitigations([]);
     setOptimizationResult(null);
-    setIsDrawMode(false);
+    setDrawMode(null);
     setError(null);
   };
 
@@ -258,14 +266,30 @@ export default function App() {
             <div className="space-y-3">
               <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Proposed Road Design</h2>
               
-              {!isDrawMode ? (
-                <button
-                  onClick={startDrawing}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-100 rounded-lg font-bold text-xs shadow-lg shadow-emerald-700/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 border border-emerald-500/20"
-                >
-                  <Pencil className="w-4 h-4" />
-                  Draw Proposed Road
-                </button>
+              {!drawMode ? (
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    onClick={() => startDrawing('straight')}
+                    className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-100 rounded-lg font-bold text-[10px] shadow-lg shadow-emerald-700/20 active:scale-95 transition-all flex flex-col items-center justify-center gap-1 border border-emerald-500/20"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    Straight
+                  </button>
+                  <button
+                    onClick={() => startDrawing('freehand')}
+                    className="py-2.5 bg-sky-600 hover:bg-sky-500 text-slate-100 rounded-lg font-bold text-[10px] shadow-lg shadow-sky-700/20 active:scale-95 transition-all flex flex-col items-center justify-center gap-1 border border-sky-500/20"
+                  >
+                    <Spline className="w-4 h-4" />
+                    Freehand
+                  </button>
+                  <button
+                    onClick={() => startDrawing('shape')}
+                    className="py-2.5 bg-violet-600 hover:bg-violet-500 text-slate-100 rounded-lg font-bold text-[10px] shadow-lg shadow-violet-700/20 active:scale-95 transition-all flex flex-col items-center justify-center gap-1 border border-violet-500/20"
+                  >
+                    <Shapes className="w-4 h-4" />
+                    Shape
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={completeDrawing}
@@ -313,9 +337,13 @@ export default function App() {
             </div>
 
             {/* Quick Helper Instructions */}
-            {isDrawMode && (
+            {drawMode && (
               <div className="p-3 bg-blue-950/20 border border-blue-900/30 rounded-lg text-[10px] text-blue-300 leading-normal">
-                💡 <span className="font-semibold text-slate-200">How to draw:</span> Click sequentially on the map to define the road path. When done, click the amber "Complete Route Geometry" button above. You can drag vertices on the map anytime to simulate adjustments.
+                💡 <span className="font-semibold text-slate-200">
+                  {drawMode === 'straight' && "Click sequentially on the map to place straight-line points. Double-click, or press \"Complete Route Geometry\", when done."}
+                  {drawMode === 'freehand' && "Press and hold the mouse button, then drag across the map to draw a freehand curvy route. Release to stop a stroke — you can start again to keep extending it."}
+                  {drawMode === 'shape' && "Click points to outline a custom shape. Click back on your very first point to close it into a shape, then press \"Complete Route Geometry\"."}
+                </span>
               </div>
             )}
           </div>
@@ -346,7 +374,9 @@ export default function App() {
               layers={layers}
               drawnPoints={drawnPoints}
               setDrawnPoints={setDrawnPoints}
-              isDrawMode={isDrawMode}
+              drawMode={drawMode}
+              isShapeClosed={isShapeClosed}
+              setIsShapeClosed={setIsShapeClosed}
               activeRouteId={hoveredRouteId || activeRouteId} // Priority to hovered route
               alternativeRoutes={alternativeRoutes}
               visibleLayers={visibleLayers}
